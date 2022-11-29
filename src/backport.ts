@@ -16,6 +16,8 @@ type Config = {
   labels: {
     pattern: RegExp;
   };
+  branch_pattern: RegExp;
+  backport_branches: string[];
   pull: {
     description: string;
     title: string;
@@ -53,17 +55,34 @@ export class Backport {
       const headref = mainpr.head.sha;
       const baseref = mainpr.base.sha;
       const labels = mainpr.labels;
+      const headname = mainpr.head.ref;
+
 
       console.log(
         `Detected labels on PR: ${labels.map((label) => label.name)}`
       );
 
+
+      console.log(
+        `Detected head ref on PR: ${headname}`
+      )
+
+
+      if(!this.config.branch_pattern.test(headname)){
+        console.log(
+          `Head REF doesn't matches the pattern: ${this.config.branch_pattern}`
+        )
+        return
+      }
+      /*
+      
       if (!someLabelIn(labels).matches(this.config.labels.pattern)) {
         console.log(
           `Nothing to backport: none of the labels match the backport pattern '${this.config.labels.pattern.source}'`
         );
         return; // nothing left to do here
       }
+      */
 
       console.log(
         `Fetching all the commits from the pull request: ${mainpr.commits + 1}`
@@ -81,7 +100,121 @@ export class Backport {
       const commitShas = await this.github.getCommits(mainpr);
 
       console.log(`Found commits: ${commitShas}`);
+      for (const branch of this.config.backport_branches) {
+        console.log(`Working on branch ${branch}`)
+        const target = branch
+        await git.fetch(target, this.config.pwd, 1);
 
+        try {
+          const branchname = `backport-${pull_number}-to-${target}`;
+
+          console.log(`Start backport to ${branchname}`);
+          try {
+            await git.checkout(branchname, `origin/${target}`, this.config.pwd);
+          } catch (error) {
+            const message = this.composeMessageForBackportScriptFailure(
+              target,
+              3,
+              baseref,
+              headref,
+              branchname
+            );
+            console.error(message);
+            await this.github.createComment({
+              owner,
+              repo,
+              issue_number: pull_number,
+              body: message,
+            });
+            continue;
+          }
+
+          try {
+            await git.cherryPick(commitShas, this.config.pwd);
+          } catch (error) {
+            const message = this.composeMessageForBackportScriptFailure(
+              target,
+              4,
+              baseref,
+              headref,
+              branchname
+            );
+            console.error(message);
+            await this.github.createComment({
+              owner,
+              repo,
+              issue_number: pull_number,
+              body: message,
+            });
+            continue;
+          }
+
+          console.info(`Push branch to origin`);
+          const pushExitCode = await git.push(branchname, this.config.pwd);
+          if (pushExitCode != 0) {
+            const message = this.composeMessageForGitPushFailure(
+              target,
+              pushExitCode
+            );
+            console.error(message);
+            await this.github.createComment({
+              owner,
+              repo,
+              issue_number: pull_number,
+              body: message,
+            });
+            continue;
+          }
+
+          console.info(`Create PR for ${branchname}`);
+          const { title, body } = this.composePRContent(target, mainpr);
+          const new_pr_response = await this.github.createPR({
+            owner,
+            repo,
+            title,
+            body,
+            head: branchname,
+            base: target,
+            maintainer_can_modify: true,
+          });
+
+          if (new_pr_response.status != 201) {
+            console.error(JSON.stringify(new_pr_response));
+            const message =
+              this.composeMessageForCreatePRFailed(new_pr_response);
+            await this.github.createComment({
+              owner,
+              repo,
+              issue_number: pull_number,
+              body: message,
+            });
+            continue;
+          }
+          const new_pr = new_pr_response.data;
+
+          const message = this.composeMessageForSuccess(new_pr.number, target);
+          await this.github.createComment({
+            owner,
+            repo,
+            issue_number: pull_number,
+            body: message,
+          });
+        } catch (error) {
+          if (error instanceof Error) {
+            console.error(error.message);
+            await this.github.createComment({
+              owner,
+              repo,
+              issue_number: pull_number,
+              body: error.message,
+            });
+          } else {
+            throw error;
+          }
+        }
+        
+      }
+      /*
       for (const label of labels) {
         console.log(`Working on label ${label.name}`);
 
@@ -216,6 +349,7 @@ export class Backport {
           }
         }
       }
+      */
     } catch (error) {
       if (error instanceof Error) {
         console.error(error.message);
@@ -301,12 +435,14 @@ export class Backport {
   }
 }
 
+/*
 /**
  * Helper method for label arrays to check that it matches a particular pattern
  *
  * @param labels an array of labels
  * @returns a 'curried' function to easily test for a matching a label
  */
+/*
 function someLabelIn(labels: { name: string }[]): {
   matches: (pattern: RegExp) => boolean;
 } {
@@ -314,3 +450,4 @@ function someLabelIn(labels: { name: string }[]): {
     matches: (pattern) => labels.some((l) => pattern.test(l.name)),
   };
 }
+*/

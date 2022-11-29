@@ -74,35 +74,31 @@ class Backport {
                 const headref = mainpr.head.sha;
                 const baseref = mainpr.base.sha;
                 const labels = mainpr.labels;
+                const headname = mainpr.head.ref;
                 console.log(`Detected labels on PR: ${labels.map((label) => label.name)}`);
-                if (!someLabelIn(labels).matches(this.config.labels.pattern)) {
-                    console.log(`Nothing to backport: none of the labels match the backport pattern '${this.config.labels.pattern.source}'`);
-                    return; // nothing left to do here
+                console.log(`Detected head ref on PR: ${headname}`);
+                if (!this.config.branch_pattern.test(headname)) {
+                    console.log(`Head REF doesn't matches the pattern: ${this.config.branch_pattern}`);
+                    return;
                 }
+                /*
+                
+                if (!someLabelIn(labels).matches(this.config.labels.pattern)) {
+                  console.log(
+                    `Nothing to backport: none of the labels match the backport pattern '${this.config.labels.pattern.source}'`
+                  );
+                  return; // nothing left to do here
+                }
+                */
                 console.log(`Fetching all the commits from the pull request: ${mainpr.commits + 1}`);
                 yield git.fetch(`refs/pull/${pull_number}/head`, this.config.pwd, mainpr.commits + 1 // +1 in case this concerns a shallowly cloned repo
                 );
                 console.log("Determining first and last commit shas, so we can cherry-pick the commit range");
                 const commitShas = yield this.github.getCommits(mainpr);
                 console.log(`Found commits: ${commitShas}`);
-                for (const label of labels) {
-                    console.log(`Working on label ${label.name}`);
-                    // we are looking for labels like "backport stable/0.24"
-                    const match = this.config.labels.pattern.exec(label.name);
-                    if (!match) {
-                        console.log("Doesn't match expected prefix");
-                        continue;
-                    }
-                    if (match.length < 2) {
-                        console.error((0, dedent_1.default) `\`label_pattern\` '${this.config.labels.pattern.source}' \
-            matched "${label.name}", but did not capture any branchname. \
-            Please make sure to provide a regex with a capture group as \
-            \`label_pattern\`.`);
-                        continue;
-                    }
-                    //extract the target branch (e.g. "stable/0.24")
-                    const target = match[1];
-                    console.log(`Found target in label: ${target}`);
+                for (const branch of this.config.backport_branches) {
+                    console.log(`Working on branch ${branch}`);
+                    const target = branch;
                     yield git.fetch(target, this.config.pwd, 1);
                     try {
                         const branchname = `backport-${pull_number}-to-${target}`;
@@ -194,6 +190,142 @@ class Backport {
                         }
                     }
                 }
+                /*
+                for (const label of labels) {
+                  console.log(`Working on label ${label.name}`);
+          
+                  // we are looking for labels like "backport stable/0.24"
+                  const match = this.config.labels.pattern.exec(label.name);
+          
+                  if (!match) {
+                    console.log("Doesn't match expected prefix");
+                    continue;
+                  }
+                  if (match.length < 2) {
+                    console.error(
+                      dedent`\`label_pattern\` '${this.config.labels.pattern.source}' \
+                      matched "${label.name}", but did not capture any branchname. \
+                      Please make sure to provide a regex with a capture group as \
+                      \`label_pattern\`.`
+                    );
+                    continue;
+                  }
+          
+                  //extract the target branch (e.g. "stable/0.24")
+                  const target = match[1];
+                  console.log(`Found target in label: ${target}`);
+          
+                  await git.fetch(target, this.config.pwd, 1);
+          
+                  try {
+                    const branchname = `backport-${pull_number}-to-${target}`;
+          
+                    console.log(`Start backport to ${branchname}`);
+                    try {
+                      await git.checkout(branchname, `origin/${target}`, this.config.pwd);
+                    } catch (error) {
+                      const message = this.composeMessageForBackportScriptFailure(
+                        target,
+                        3,
+                        baseref,
+                        headref,
+                        branchname
+                      );
+                      console.error(message);
+                      await this.github.createComment({
+                        owner,
+                        repo,
+                        issue_number: pull_number,
+                        body: message,
+                      });
+                      continue;
+                    }
+          
+                    try {
+                      await git.cherryPick(commitShas, this.config.pwd);
+                    } catch (error) {
+                      const message = this.composeMessageForBackportScriptFailure(
+                        target,
+                        4,
+                        baseref,
+                        headref,
+                        branchname
+                      );
+                      console.error(message);
+                      await this.github.createComment({
+                        owner,
+                        repo,
+                        issue_number: pull_number,
+                        body: message,
+                      });
+                      continue;
+                    }
+          
+                    console.info(`Push branch to origin`);
+                    const pushExitCode = await git.push(branchname, this.config.pwd);
+                    if (pushExitCode != 0) {
+                      const message = this.composeMessageForGitPushFailure(
+                        target,
+                        pushExitCode
+                      );
+                      console.error(message);
+                      await this.github.createComment({
+                        owner,
+                        repo,
+                        issue_number: pull_number,
+                        body: message,
+                      });
+                      continue;
+                    }
+          
+                    console.info(`Create PR for ${branchname}`);
+                    const { title, body } = this.composePRContent(target, mainpr);
+                    const new_pr_response = await this.github.createPR({
+                      owner,
+                      repo,
+                      title,
+                      body,
+                      head: branchname,
+                      base: target,
+                      maintainer_can_modify: true,
+                    });
+          
+                    if (new_pr_response.status != 201) {
+                      console.error(JSON.stringify(new_pr_response));
+                      const message =
+                        this.composeMessageForCreatePRFailed(new_pr_response);
+                      await this.github.createComment({
+                        owner,
+                        repo,
+                        issue_number: pull_number,
+                        body: message,
+                      });
+                      continue;
+                    }
+                    const new_pr = new_pr_response.data;
+          
+                    const message = this.composeMessageForSuccess(new_pr.number, target);
+                    await this.github.createComment({
+                      owner,
+                      repo,
+                      issue_number: pull_number,
+                      body: message,
+                    });
+                  } catch (error) {
+                    if (error instanceof Error) {
+                      console.error(error.message);
+                      await this.github.createComment({
+                        owner,
+                        repo,
+                        issue_number: pull_number,
+                        body: error.message,
+                      });
+                    } else {
+                      throw error;
+                    }
+                  }
+                }
+                */
             }
             catch (error) {
                 if (error instanceof Error) {
@@ -254,17 +386,22 @@ class Backport {
     }
 }
 exports.Backport = Backport;
+/*
 /**
  * Helper method for label arrays to check that it matches a particular pattern
  *
  * @param labels an array of labels
  * @returns a 'curried' function to easily test for a matching a label
  */
-function someLabelIn(labels) {
-    return {
-        matches: (pattern) => labels.some((l) => pattern.test(l.name)),
-    };
+/*
+function someLabelIn(labels: { name: string }[]): {
+  matches: (pattern: RegExp) => boolean;
+} {
+  return {
+    matches: (pattern) => labels.some((l) => pattern.test(l.name)),
+  };
 }
+*/ 
 
 
 /***/ }),
@@ -553,12 +690,16 @@ function run() {
         const token = core.getInput("github_token", { required: true });
         const pwd = core.getInput("github_workspace", { required: true });
         const pattern = new RegExp(core.getInput("label_pattern"));
+        const branch_pattern = new RegExp(core.getInput("branch_pattern"));
+        const backport_branches = core.getInput("backport_branches").split("\n").filter(x => x !== "");
         const description = core.getInput("pull_description");
         const title = core.getInput("pull_title");
         const github = new github_1.Github(token);
         const backport = new backport_1.Backport(github, {
             pwd,
             labels: { pattern },
+            backport_branches,
+            branch_pattern,
             pull: { description, title },
         });
         return backport.run();

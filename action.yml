@@ -13,6 +13,11 @@ inputs:
   label_pattern:
     description: A regex pattern to match the backport labels.
     default: ^backport ([^ ]+)$
+  branch_pattern:
+    description: A regex pattern to match the branch of the PR
+    default: ^hotfix/([^ ]+)$
+  backport_branches:
+    description: Target branches for the backport
   pull_description:
     description: >
       Template used as description in the pull requests created by this action.

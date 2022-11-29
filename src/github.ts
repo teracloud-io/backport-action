@@ -123,6 +123,7 @@ export type PullRequest = {
   title: string;
   body: string | null;
   head: {
+    ref: string;
     sha: string;
   };
   base: {
