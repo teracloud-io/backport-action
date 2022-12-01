@@ -129,6 +129,9 @@ export class Backport {
             continue;
           }
 
+
+          /*
+
           try {
             await git.cherryPick(commitShas, this.config.pwd);
           } catch (error) {
@@ -148,6 +151,8 @@ export class Backport {
             });
             continue;
           }
+
+          */
 
           console.info(`Push branch to origin`);
           const pushExitCode = await git.push(branchname, this.config.pwd);
