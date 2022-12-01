@@ -75,8 +75,14 @@ class Backport {
                 // const baseref = mainpr.base.sha;
                 const labels = mainpr.labels;
                 const headname = mainpr.head.ref;
+                const basename = mainpr.base.ref;
                 console.log(`Detected labels on PR: ${labels.map((label) => label.name)}`);
                 console.log(`Detected head ref on PR: ${headname}`);
+                console.log(`Detected base ref on PR: ${basename}`);
+                if (basename !== 'main' && basename !== 'master') {
+                    console.log("Base REF doesn't matches main or master");
+                    return;
+                }
                 if (!this.config.branch_pattern.test(headname)) {
                     console.log(`Head REF doesn't matches the pattern: ${this.config.branch_pattern}`);
                     return;

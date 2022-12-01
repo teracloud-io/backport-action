@@ -127,6 +127,7 @@ export type PullRequest = {
     sha: string;
   };
   base: {
+    ref: string;
     sha: string;
   };
   user: {
