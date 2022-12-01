@@ -71,8 +71,8 @@ class Backport {
                     });
                     return;
                 }
-                const headref = mainpr.head.sha;
-                const baseref = mainpr.base.sha;
+                // const headref = mainpr.head.sha;
+                // const baseref = mainpr.base.sha;
                 const labels = mainpr.labels;
                 const headname = mainpr.head.ref;
                 console.log(`Detected labels on PR: ${labels.map((label) => label.name)}`);
@@ -93,57 +93,81 @@ class Backport {
                 console.log(`Fetching all the commits from the pull request: ${mainpr.commits + 1}`);
                 yield git.fetch(`refs/pull/${pull_number}/head`, this.config.pwd, mainpr.commits + 1 // +1 in case this concerns a shallowly cloned repo
                 );
-                console.log("Determining first and last commit shas, so we can cherry-pick the commit range");
-                const commitShas = yield this.github.getCommits(mainpr);
+                /*
+                console.log(
+                  "Determining first and last commit shas, so we can cherry-pick the commit range"
+                );
+                
+                const commitShas = await this.github.getCommits(mainpr);
                 console.log(`Found commits: ${commitShas}`);
+                */
                 for (const branch of this.config.backport_branches) {
                     console.log(`Working on branch ${branch}`);
                     const target = branch;
                     yield git.fetch(target, this.config.pwd, 1);
                     try {
-                        const branchname = `backport-${pull_number}-to-${target}`;
+                        const branchname = headname;
                         console.log(`Start backport to ${branchname}`);
+                        /*
                         try {
-                            yield git.checkout(branchname, `origin/${target}`, this.config.pwd);
+                          await git.checkout(branchname, `origin/${target}`, this.config.pwd);
+                        } catch (error) {
+                          const message = this.composeMessageForBackportScriptFailure(
+                            target,
+                            3,
+                            baseref,
+                            headref,
+                            branchname
+                          );
+                          console.error(message);
+                          await this.github.createComment({
+                            owner,
+                            repo,
+                            issue_number: pull_number,
+                            body: message,
+                          });
+                          continue;
                         }
-                        catch (error) {
-                            const message = this.composeMessageForBackportScriptFailure(target, 3, baseref, headref, branchname);
-                            console.error(message);
-                            yield this.github.createComment({
-                                owner,
-                                repo,
-                                issue_number: pull_number,
-                                body: message,
-                            });
-                            continue;
-                        }
+              
                         try {
-                            yield git.cherryPick(commitShas, this.config.pwd);
+                          await git.cherryPick(commitShas, this.config.pwd);
+                        } catch (error) {
+                          const message = this.composeMessageForBackportScriptFailure(
+                            target,
+                            4,
+                            baseref,
+                            headref,
+                            branchname
+                          );
+                          console.error(message);
+                          await this.github.createComment({
+                            owner,
+                            repo,
+                            issue_number: pull_number,
+                            body: message,
+                          });
+                          continue;
                         }
-                        catch (error) {
-                            const message = this.composeMessageForBackportScriptFailure(target, 4, baseref, headref, branchname);
-                            console.error(message);
-                            yield this.github.createComment({
-                                owner,
-                                repo,
-                                issue_number: pull_number,
-                                body: message,
-                            });
-                            continue;
-                        }
+              
+                        
+              
                         console.info(`Push branch to origin`);
-                        const pushExitCode = yield git.push(branchname, this.config.pwd);
+                        const pushExitCode = await git.push(branchname, this.config.pwd);
                         if (pushExitCode != 0) {
-                            const message = this.composeMessageForGitPushFailure(target, pushExitCode);
-                            console.error(message);
-                            yield this.github.createComment({
-                                owner,
-                                repo,
-                                issue_number: pull_number,
-                                body: message,
-                            });
-                            continue;
+                          const message = this.composeMessageForGitPushFailure(
+                            target,
+                            pushExitCode
+                          );
+                          console.error(message);
+                          await this.github.createComment({
+                            owner,
+                            repo,
+                            issue_number: pull_number,
+                            body: message,
+                          });
+                          continue;
                         }
+                        */
                         console.info(`Create PR for ${branchname}`);
                         const { title, body } = this.composePRContent(target, mainpr);
                         const new_pr_response = yield this.github.createPR({
@@ -344,37 +368,51 @@ class Backport {
         const body = utils.replacePlaceholders(this.config.pull.description, main, target);
         return { title, body };
     }
-    composeMessageForBackportScriptFailure(target, exitcode, baseref, headref, branchname) {
-        var _a;
-        const reasons = {
-            1: "due to an unknown script error",
-            2: "because it was unable to create/access the git worktree directory",
-            3: "because it was unable to create a new branch",
-            4: "because it was unable to cherry-pick the commit(s)",
-            5: "because 1 or more of the commits are not available",
-            6: "because 1 or more of the commits are not available",
-        };
-        const reason = (_a = reasons[exitcode]) !== null && _a !== void 0 ? _a : "due to an unknown script error";
-        const suggestion = exitcode <= 4
-            ? (0, dedent_1.default) `\`\`\`bash
-                git fetch origin ${target}
-                git worktree add -d .worktree/${branchname} origin/${target}
-                cd .worktree/${branchname}
-                git checkout -b ${branchname}
-                ancref=$(git merge-base ${baseref} ${headref})
-                git cherry-pick -x $ancref..${headref}
-                \`\`\``
-            : (0, dedent_1.default) `Note that rebase and squash merges are not supported at this time.
-                For more information see https://github.com/zeebe-io/backport-action/issues/46.`;
-        return (0, dedent_1.default) `Backport failed for \`${target}\`, ${reason}.
-
-                  Please cherry-pick the changes locally.
-                  ${suggestion}`;
+    /*
+    private composeMessageForBackportScriptFailure(
+      target: string,
+      exitcode: number,
+      baseref: string,
+      headref: string,
+      branchname: string
+    ): string {
+      const reasons: { [key: number]: string } = {
+        1: "due to an unknown script error",
+        2: "because it was unable to create/access the git worktree directory",
+        3: "because it was unable to create a new branch",
+        4: "because it was unable to cherry-pick the commit(s)",
+        5: "because 1 or more of the commits are not available",
+        6: "because 1 or more of the commits are not available",
+      };
+      const reason = reasons[exitcode] ?? "due to an unknown script error";
+  
+      const suggestion =
+        exitcode <= 4
+          ? dedent`\`\`\`bash
+                  git fetch origin ${target}
+                  git worktree add -d .worktree/${branchname} origin/${target}
+                  cd .worktree/${branchname}
+                  git checkout -b ${branchname}
+                  ancref=$(git merge-base ${baseref} ${headref})
+                  git cherry-pick -x $ancref..${headref}
+                  \`\`\``
+          : dedent`Note that rebase and squash merges are not supported at this time.
+                  For more information see https://github.com/zeebe-io/backport-action/issues/46.`;
+  
+      return dedent`Backport failed for \`${target}\`, ${reason}.
+  
+                    Please cherry-pick the changes locally.
+                    ${suggestion}`;
     }
-    composeMessageForGitPushFailure(target, exitcode) {
-        //TODO better error messages depending on exit code
-        return (0, dedent_1.default) `Git push to origin failed for ${target} with exitcode ${exitcode}`;
+  
+    private composeMessageForGitPushFailure(
+      target: string,
+      exitcode: number
+    ): string {
+      //TODO better error messages depending on exit code
+      return dedent`Git push to origin failed for ${target} with exitcode ${exitcode}`;
     }
+    */
     composeMessageForCreatePRFailed(response) {
         return (0, dedent_1.default) `Backport branch created but failed to create PR. 
                 Request to create PR rejected with status ${response.status}.

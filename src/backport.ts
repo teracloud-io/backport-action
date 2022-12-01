@@ -52,8 +52,8 @@ export class Backport {
         return;
       }
 
-      const headref = mainpr.head.sha;
-      const baseref = mainpr.base.sha;
+      // const headref = mainpr.head.sha;
+      // const baseref = mainpr.base.sha;
       const labels = mainpr.labels;
       const headname = mainpr.head.ref;
 
@@ -93,22 +93,25 @@ export class Backport {
         mainpr.commits + 1 // +1 in case this concerns a shallowly cloned repo
       );
 
+      /*
       console.log(
         "Determining first and last commit shas, so we can cherry-pick the commit range"
       );
-
+      
       const commitShas = await this.github.getCommits(mainpr);
-
       console.log(`Found commits: ${commitShas}`);
+      */
+      
       for (const branch of this.config.backport_branches) {
         console.log(`Working on branch ${branch}`)
         const target = branch
         await git.fetch(target, this.config.pwd, 1);
 
         try {
-          const branchname = `backport-${pull_number}-to-${target}`;
+          const branchname = headname;
 
           console.log(`Start backport to ${branchname}`);
+          /*
           try {
             await git.checkout(branchname, `origin/${target}`, this.config.pwd);
           } catch (error) {
@@ -128,9 +131,6 @@ export class Backport {
             });
             continue;
           }
-
-
-          /*
 
           try {
             await git.cherryPick(commitShas, this.config.pwd);
@@ -152,7 +152,7 @@ export class Backport {
             continue;
           }
 
-          */
+          
 
           console.info(`Push branch to origin`);
           const pushExitCode = await git.push(branchname, this.config.pwd);
@@ -170,6 +170,7 @@ export class Backport {
             });
             continue;
           }
+          */
 
           console.info(`Create PR for ${branchname}`);
           const { title, body } = this.composePRContent(target, mainpr);
@@ -382,6 +383,7 @@ export class Backport {
     return { title, body };
   }
 
+  /*
   private composeMessageForBackportScriptFailure(
     target: string,
     exitcode: number,
@@ -425,7 +427,7 @@ export class Backport {
     //TODO better error messages depending on exit code
     return dedent`Git push to origin failed for ${target} with exitcode ${exitcode}`;
   }
-
+  */
   private composeMessageForCreatePRFailed(
     response: CreatePullRequestResponse
   ): string {
